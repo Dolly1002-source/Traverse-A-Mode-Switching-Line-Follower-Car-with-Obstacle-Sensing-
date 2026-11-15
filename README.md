@@ -1,89 +1,140 @@
 # Traverse: A Mode-Switching Line Follower Car with Obstacle Sensing
 
-A dual-mode robotic car built around a **TM4C123GH6PM** (ARM Cortex-M4F) microcontroller. In **autonomous mode** it follows a line using infrared sensors and uses an ultrasonic sensor to detect obstacles ahead. In **manual mode** it is driven wirelessly over Bluetooth from a smartphone. The goal was a low-cost, flexible platform that sits between basic hobby kits and expensive autonomous vehicles.
+Traverse is a small robotic car built on the **TM4C123GH6PM LaunchPad** (ARM Cortex-M4F), written in bare-metal C. It runs in two modes and switches between them on a Bluetooth command:
 
-> **Authors:** Vishva Gondalia, Reshika Nimmala, and Skanda Mandya Kumar
-> California State University, Fullerton
+- **Autonomous mode:** follows a line with an IR sensor and stops when an obstacle is within 25 cm.
+- **Manual mode:** driven from a smartphone over Bluetooth (HC-05).
 
-📄 **Paper:** [Traverse_conference_paper.pdf](Traverse_conference_paper.pdf)
+The project was built at California State University, Fullerton, as a low-cost platform that sits between basic hobby kits and expensive autonomous vehicles.
+
+📄 **Project report:** [Traverse report.pdf](Traverse%20report.pdf)
+
+<!-- Add a photo or demo GIF of the car here, for example:
+![Traverse car](docs/traverse.jpg) -->
 
 ---
 
 ## Features
 
-- **Two operating modes:** autonomous line following with obstacle sensing, and manual Bluetooth control
-- **Line following** with an infrared sensor array at the front of the car
-- **Obstacle detection** with an HC-SR04 ultrasonic sensor mounted on an SG90 servo that scans the path ahead
-- **Motor control** using PWM for speed and direction (forward, reverse, left, right)
-- **Wireless control** from a smartphone using an HC-05 Bluetooth module
+- Two operating modes, switched at any time over Bluetooth
+- Line detection with an IR sensor
+- Obstacle detection with an HC-SR04 ultrasonic sensor, measured with a hardware timer in edge-capture mode
+- Wireless control from a phone through an HC-05 module on UART5
+- Status LEDs: **green** while the car is moving, **red** while it is stopped
+- Status messages sent back to the phone (for example, `Switched to Manual Mode`)
 
 ## Hardware
 
 | Component | Role |
 |---|---|
-| TM4C123GH6PM LaunchPad | Main controller (80 MHz Cortex-M4F, 256 KB flash, 32 KB SRAM, PWM and UART peripherals) |
-| HC-05 Bluetooth module | Wireless serial link (Bluetooth 2.0 + EDR, SPP, 9600 baud default, about 10 m range) |
-| L298N motor driver | Drives the two DC motors (5–35 V motor supply, up to 2 A per channel) |
+| TM4C123GH6PM LaunchPad | Main controller (80 MHz Cortex-M4F, 256 KB flash, 32 KB SRAM) |
+| HC-05 Bluetooth module | Wireless serial link to the phone (9600 baud) |
+| L298N motor driver | Drives the two DC motors |
 | 2 × DC motors | Wheel drive |
-| IR sensors | Line detection |
-| HC-SR04 ultrasonic sensor | Distance measurement (2–400 cm range, 40 kHz) |
-| SG90 servo | Rotates the ultrasonic sensor to scan left and right |
+| IR sensor | Line detection |
+| HC-SR04 ultrasonic sensor | Distance measurement (2–400 cm range) |
 | Battery or power bank | Power supply |
-| Smartphone | Manual control through a serial Bluetooth terminal app |
-| Arduino Uno + joystick (optional) | Alternative wireless transmitter described in the paper |
+| Smartphone | Runs the *Serial Bluetooth Terminal* app |
 
-> The paper names both the L298N and the L293D as the motor driver. The circuit description of the L298N is detailed, so check which one your build used.
+## Pin Connections
+
+| Signal | TM4C123 pin | Connected to |
+|---|---|---|
+| Motor IN1 | PB0 | L298N IN1 |
+| Motor IN2 | PB1 | L298N IN2 |
+| Motor IN3 | PB2 | L298N IN3 |
+| Motor IN4 | PB3 | L298N IN4 |
+| Ultrasonic TRIG | PA4 | HC-SR04 Trig |
+| Ultrasonic ECHO | PB6 (T0CCP0) | HC-SR04 Echo |
+| IR sensor | PE0 | IR sensor output |
+| Bluetooth RX | PC4 (U5RX) | HC-05 TX |
+| Bluetooth TX | PC5 (U5TX) | HC-05 RX |
+| Red LED | PF1 | On-board LED |
+| Green LED | PF3 | On-board LED |
+
+## Bluetooth Commands
+
+Connect to the HC-05 from the *Serial Bluetooth Terminal* app and send one character:
+
+| Command | Action |
+|---|---|
+| `A` | Switch to autonomous mode (default at power-on) |
+| `M` | Switch to manual mode |
+| `1` | Drive forward (manual mode only) |
+| `2` | Stop (manual mode only) |
 
 ## How It Works
 
-### Manual mode
-
-1. A smartphone running the **Serial Bluetooth Terminal** app sends a command when a button (M1, M2, M3, and so on) is pressed.
-2. The car's HC-05 module receives the command and passes it to the TM4C123 over serial.
-3. The microcontroller interprets the command and sets PWM and direction signals on the motor driver.
-4. The car moves forward, backward, or stops.
-
 ### Autonomous mode
 
-1. The IR sensor array reports the position of the black or white line as digital signals.
-2. The TM4C123 adjusts motor speed and direction to stay aligned with the line.
-3. The HC-SR04, mounted on the servo, measures the distance to objects ahead.
-4. When an obstacle is detected, the car pauses to avoid it, then resumes line tracking.
+On every pass through the main loop, the car:
 
-Distance is computed from the echo time as `distance = (time × speed of sound) / 2`.
+1. Fires the ultrasonic sensor and times the echo pulse with Timer0.
+2. Converts the pulse width to distance: `distance = (time × 34300 cm/s) / 2`.
+3. Stops if an obstacle is **25 cm or closer**.
+4. Otherwise reads the IR sensor: it drives forward while the line is detected and stops when the line is lost.
+
+### Manual mode
+
+1. The phone sends a single-character command.
+2. The HC-05 passes it to the TM4C123 over UART5.
+3. The firmware drives the motor pins and replies with a status message.
+
+## Building and Flashing
+
+1. Install **Keil µVision 5** and the **TM4C123 device pack** (Tiva C Series).
+2. Open `UART_Echo.uvprojx`.
+3. Build the project (**F7**).
+4. Connect the LaunchPad over USB and flash it (**F8**) with the Stellaris ICDI debugger.
+5. Pair your phone with the HC-05 (default PIN `1234` or `0000`) and send commands.
+
+## Repository Structure
+
+| File | Description |
+|---|---|
+| `main.c` | Application code: mode switching, motors, ultrasonic, IR, UART |
+| `startup_TM4C123.s` | Startup code and vector table (vendor-provided) |
+| `system_TM4C123.c` | System and clock setup (vendor-provided) |
+| `RTE_Components.h` | Keil run-time environment configuration |
+| `UART_Echo.uvprojx`, `UART_Echo.uvoptx` | Keil µVision project files |
+| `Traverse report.pdf` | Full project report |
 
 ## Test Results
 
-The car was tested in both modes, with serial output captured through PuTTY (autonomous mode) and the phone app log (manual mode).
+These figures come from the project report. They were measured on a short (70 cm) high-contrast test track.
 
-| Metric | Reported value |
+| Metric | Result |
 |---|---|
-| Total distance travelled | 70 cm |
-| Total time | 9 s |
-| Average speed | 7.78 cm/s |
-| Maximum speed | 10 cm/s |
-| Bluetooth control response | 120 ms |
-| Motor response time | < 150 ms |
+| Average speed | 7.78 cm/s (70 cm in 9 s) |
+| Bluetooth command response | ~120 ms |
 | Bluetooth range | 8–10 m |
-| Line detection accuracy | about 90% on a high-contrast track |
+| Line detection accuracy | ~90% |
 | Obstacle detection range | 40–50 cm |
-| Battery runtime | 42 min |
-| Average power consumption | 1.8 W |
-
-Sample ultrasonic readings in autonomous mode included 40 cm, 39 cm, and 25 cm, while the IR array detected the line continuously.
-
-The paper also compares the car with two commercial kits (a Bluetooth-only car kit and a 4WD kit with ultrasonic and IR sensing) on control modes, sensing, runtime, and cost.
+| Battery runtime | ~42 min |
+| Average power consumption | ~1.8 W |
 
 ## Limitations
 
-- The test track was short (70 cm), so the results show basic functionality rather than performance over long or complex courses.
-- Several figures in the performance table are stated as specifications or estimates and are not backed by detailed test procedures in the paper.
-- The HC-05 is a classic Bluetooth module, so power comparisons with Wi-Fi or Bluetooth Low Energy do not apply to the measured hardware.
+- **Short test track:** the 70 cm track shows basic functionality, not performance on long or complex courses.
+- **Single IR sensor:** the car stops when it loses the line instead of steering back toward it.
+- **On/off motor control:** the motors run at full speed or stop, with no PWM speed control.
+- **Blocking distance reading:** if no echo returns, the distance measurement waits indefinitely.
 
+## Future Work
 
+- Add left, right and reverse movement
+- Add PWM speed control
+- Add an IR sensor array for proper steering
+- Mount the ultrasonic sensor on an SG90 servo to scan left and right and steer around obstacles
+- Add a timeout to the ultrasonic measurement
 
 ## Authors
 
-- **Reshika Nimmala** — [@Dolly1002-source](https://github.com/Dolly1002-source)
+- **Reshika Nimmala** ([@Dolly1002-source](https://github.com/Dolly1002-source))
 - Vishva Gondalia
 - Skanda Mandya Kumar
+
+California State University, Fullerton
+
+
+
